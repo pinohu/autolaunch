@@ -1,0 +1,201 @@
+version: '3.8'
+
+services:
+  # Frontend service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: autolaunch-frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - REACT_APP_API_URL=http://backend:${BACKEND_PORT:-3001}/api
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - autolaunch-network
+
+  # Backend service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: autolaunch-backend
+    ports:
+      - "${BACKEND_PORT:-3001}:3001"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - ./deploy:/app/deploy
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=${BACKEND_PORT:-3001}
+      - MONGODB_URI=${MONGODB_URI:-mongodb://mongo:27017/autolaunch}
+      - JWT_SECRET=${JWT_SECRET:-autolaunchsecret}
+      - ENABLE_WORDPRESS_SUPPORT=true
+      - ENABLE_BROWSER_EXTENSION_SUPPORT=true
+      - ENABLE_MOBILE_APP_SUPPORT=true
+    depends_on:
+      - mongo
+    restart: unless-stopped
+    networks:
+      - autolaunch-network
+
+  # MongoDB service
+  mongo:
+    image: mongo:latest
+    container_name: autolaunch-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    restart: unless-stopped
+    networks:
+      - autolaunch-network
+
+  # Redis for caching and session management
+  redis:
+    image: redis:alpine
+    container_name: autolaunch-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    networks:
+      - autolaunch-network
+
+  # Analytics service (optional)
+  analytics:
+    image: posthog/posthog:latest
+    container_name: autolaunch-analytics
+    ports:
+      - "8000:8000"
+    environment:
+      - SECRET_KEY=${POSTHOG_SECRET_KEY:-defaultsecretkey}
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/posthog
+      - REDIS_URL=redis://redis:6379/
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    networks:
+      - autolaunch-network
+
+  # PostgreSQL for analytics
+  postgres:
+    image: postgres:13
+    container_name: autolaunch-postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=posthog
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - autolaunch-network
+
+  # WordPress development environment for theme/plugin testing
+  wordpress:
+    image: wordpress:latest
+    container_name: autolaunch-wordpress
+    ports:
+      - "8080:80"
+    environment:
+      - WORDPRESS_DB_HOST=wordpress-db
+      - WORDPRESS_DB_USER=wordpress
+      - WORDPRESS_DB_PASSWORD=wordpress
+      - WORDPRESS_DB_NAME=wordpress
+    volumes:
+      - wordpress-data:/var/www/html
+      - ./deploy/wordpress/themes:/var/www/html/wp-content/themes
+      - ./deploy/wordpress/plugins:/var/www/html/wp-content/plugins
+    depends_on:
+      - wordpress-db
+    restart: unless-stopped
+    networks:
+      - autolaunch-network
+
+  # WordPress database
+  wordpress-db:
+    image: mysql:5.7
+    container_name: autolaunch-wordpress-db
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpassword
+      - MYSQL_DATABASE=wordpress
+      - MYSQL_USER=wordpress
+      - MYSQL_PASSWORD=wordpress
+    volumes:
+      - wordpress-db-data:/var/lib/mysql
+    restart: unless-stopped
+    networks:
+      - autolaunch-network
+
+  # Mobile app build service
+  mobile-builder:
+    build:
+      context: ./mobile-builder
+      dockerfile: Dockerfile
+    container_name: autolaunch-mobile-builder
+    volumes:
+      - ./mobile-builder:/app
+      - /app/node_modules
+      - ./deploy/mobile:/app/output
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+    restart: unless-stopped
+    networks:
+      - autolaunch-network
+
+  # Browser extension testing environment
+  extension-tester:
+    build:
+      context: ./extension-tester
+      dockerfile: Dockerfile
+    container_name: autolaunch-extension-tester
+    volumes:
+      - ./extension-tester:/app
+      - /app/node_modules
+      - ./deploy/extensions:/app/extensions
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+    restart: unless-stopped
+    networks:
+      - autolaunch-network
+
+  # Nginx for reverse proxy
+  nginx:
+    image: nginx:latest
+    container_name: autolaunch-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./config/nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./config/ssl:/etc/nginx/ssl
+    depends_on:
+      - frontend
+      - backend
+      - wordpress
+      - analytics
+    restart: unless-stopped
+    networks:
+      - autolaunch-network
+
+volumes:
+  mongo-data:
+  redis-data:
+  postgres-data:
+  wordpress-data:
+  wordpress-db-data:
+
+networks:
+  autolaunch-network:
+    driver: bridge

@@ -1,0 +1,54 @@
+FROM node:16-alpine
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apk add --no-cache \
+    bash \
+    git \
+    openssh-client \
+    python3 \
+    py3-pip \
+    make \
+    g++
+
+# Install Android SDK dependencies for mobile app building
+RUN apk add --no-cache \
+    openjdk11 \
+    gradle \
+    unzip \
+    wget
+
+# Set up environment variables
+ENV ANDROID_HOME=/opt/android-sdk
+ENV PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools
+
+# Install Android SDK
+RUN mkdir -p ${ANDROID_HOME}/cmdline-tools && \
+    wget -q https://dl.google.com/android/repository/commandlinetools-linux-8092744_latest.zip -O /tmp/sdk.zip && \
+    unzip -q /tmp/sdk.zip -d ${ANDROID_HOME}/cmdline-tools && \
+    mv ${ANDROID_HOME}/cmdline-tools/cmdline-tools ${ANDROID_HOME}/cmdline-tools/latest && \
+    rm /tmp/sdk.zip && \
+    yes | sdkmanager --licenses && \
+    sdkmanager "platform-tools" "platforms;android-31" "build-tools;31.0.0"
+
+# Install React Native CLI and Expo CLI
+RUN npm install -g react-native-cli expo-cli
+
+# Copy package.json and package-lock.json
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy the rest of the application
+COPY . .
+
+# Create output directory for built apps
+RUN mkdir -p /app/output
+
+# Expose port for development server
+EXPOSE 8081
+
+# Command to run when container starts
+CMD ["npm", "start"]
