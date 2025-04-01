@@ -23,7 +23,7 @@ AutoLaunch Studio is a comprehensive platform for creating, deploying, and manag
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/autolaunch-studio.git
+   git clone https://github.com/pinohu/autolaunch
    cd autolaunch-studio
    ```
 
